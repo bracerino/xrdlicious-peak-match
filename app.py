@@ -434,7 +434,7 @@ compare_intensities = st.checkbox("Compare intensities as well", value=True)
 min_intensity_threshold = st.slider("Minimum calculated peak intensity to consider", min_value=0, max_value=100,
                                     value=5)
 tolerance_value = st.slider(f"# Tolerance for Peak Matching (d-spacing)",
-                            min_value=0.001, max_value=0.5, value=0.05, step=0.005)
+                            min_value=0.001, max_value=0.5, value=0.05, step=0.005, format="%.3f")
 st.markdown("<div style='margin-top: 100px;'></div>", unsafe_allow_html=True)
 # Proceed only if there are structures retrieved and experimental data are valid.
 if "full_structures_see" in st.session_state and st.session_state.full_structures_see:
@@ -507,7 +507,7 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                     f"{cand['rank']}. Score: {cand['score']:.2f} | ID: {cand['id']} | {cand['composition']} | {cand['space_group']} | {cand['lattice_str']}")
                 for cand in candidates_top
             ]
-            expander = st.expander("Show Top 20 Candidate Structures (ordered best to worst)", expanded=False)
+            expander = st.expander("Show Top 30 Candidate Structures", expanded=True)
             selected_candidate_str = expander.selectbox(
                 "Select a candidate",
                 candidate_display_options,
@@ -523,7 +523,7 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 if st.button("Previous Candidate", key="prev_candidate"):
                     st.session_state.candidate_index = (st.session_state.candidate_index - 1) % len(candidates_top)
                 selected_candidate = candidates_top[st.session_state.candidate_index]
-                st.markdown("### Detailed Information for Selected Candidate")
+                st.markdown("### Selected Candidate")
                 rank = selected_candidate["rank"]
                 score = selected_candidate["score"]
 
