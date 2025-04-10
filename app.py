@@ -11,7 +11,7 @@ from scipy.optimize import linear_sum_assignment
 import plotly.graph_objs as go
 
 from aflow import search, K
-from aflow import search  # ensure your file is not named aflow.py!
+from aflow import search 
 import aflow.keywords as AFLOW_K
 from pymatgen.core import Structure
 import aflow
@@ -433,7 +433,7 @@ compare_intensities = st.checkbox("Compare intensities as well", value=True)
 
 min_intensity_threshold = st.slider("Minimum calculated peak intensity to consider", min_value=0, max_value=100,
                                     value=5)
-tolerance_value = st.slider(f"# Tolerance for Peak Matching (d-spacing)",
+tolerance_value = st.slider(f"# Tolerance for Peak Matching (d-spacing (Å)",
                             min_value=0.001, max_value=0.5, value=0.05, step=0.005, format="%.3f")
 st.markdown("<div style='margin-top: 100px;'></div>", unsafe_allow_html=True)
 # Proceed only if there are structures retrieved and experimental data are valid.
