@@ -700,9 +700,9 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 yaxis=dict(title=dict(text="Intensity", font=dict(size=30,  color="black")), tickfont=dict(size=30,  color="black"), showgrid=False,range=[-10, 120] ),
                 legend=dict(
                     font=dict(size=24, color="black"),
-                    orientation="h",  # horizontal legend
-                    y=-0.3,  # move below the plot
-                    x=0.5,  # center it horizontally
+                    orientation="h",  
+                    y=-0.3, 
+                    x=0.5,  
                     xanchor="center"
                 ),
                 template="plotly_white",
