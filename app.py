@@ -15,6 +15,8 @@ from aflow import search
 import aflow.keywords as AFLOW_K
 from pymatgen.core import Structure
 import aflow
+from scipy.signal import find_peaks
+import time
 
 st.set_page_config(
     page_title="XRDlicious: ",
@@ -126,8 +128,7 @@ def update_candidate_index():
     try:
         selected_rank = int(st.session_state.selected_candidate.split('.')[0])
         st.session_state.candidate_index = selected_rank - 1
-        print("SELECTED")
-        print(selected_rank)
+
     except Exception as e:
         st.session_state.candidate_index = 0
 
@@ -182,6 +183,36 @@ def get_full_conventional_structure(structure, symprec=1e-3):
     return conv_structure
 
 
+def filter_kalpha2_peaks(positions, intensities, tolerance=0.3):
+
+    sorted_idx = np.argsort(positions)
+    sorted_positions = positions[sorted_idx]
+    sorted_intensities = intensities[sorted_idx]
+
+    filtered_positions = []
+    filtered_intensities = []
+    cluster_positions = [sorted_positions[0]]
+    cluster_intensities = [sorted_intensities[0]]
+
+    for pos, inten in zip(sorted_positions[1:], sorted_intensities[1:]):
+        if pos - cluster_positions[-1] <= tolerance:
+            cluster_positions.append(pos)
+            cluster_intensities.append(inten)
+        else:
+            max_idx = np.argmax(cluster_intensities)
+            filtered_positions.append(cluster_positions[max_idx])
+            filtered_intensities.append(cluster_intensities[max_idx])
+            cluster_positions = [pos]
+            cluster_intensities = [inten]
+
+    # add last cluster
+    if cluster_positions:
+        max_idx = np.argmax(cluster_intensities)
+        filtered_positions.append(cluster_positions[max_idx])
+        filtered_intensities.append(cluster_intensities[max_idx])
+
+    return np.array(filtered_positions), np.array(filtered_intensities)
+
 
 def get_peak_match_score(exp_peaks, calc_pattern, wavelength, min_intensity=5):
     calc_intensities = np.array(calc_pattern.y)
@@ -197,21 +228,56 @@ def get_peak_match_score(exp_peaks, calc_pattern, wavelength, min_intensity=5):
     return total_diff
 
 
+import numpy as np
+from scipy.optimize import linear_sum_assignment
+
+
 def get_peak_match_score_with_intensity(exp_peaks, exp_intensities, calc_pattern, wavelength,
-                                        w_angle=1, w_intensity=1, min_intensity=5):
+                                        w_angle=1.0, w_intensity=0.3, min_intensity=5,
+                                        unmatched_penalty=5, match_in_twotheta=True):
     calc_intensities = np.array(calc_pattern.y)
     valid_indices = np.where(calc_intensities >= min_intensity)[0]
     if len(valid_indices) == 0:
-        return 1000 * len(exp_peaks)
-    calc_d_spacings = np.array(calc_pattern.d_hkls)[valid_indices]
-    exp_d_spacings = two_theta_to_d(exp_peaks, wavelength)
-    total_score = 0
-    for exp_d, exp_intensity in zip(exp_d_spacings, exp_intensities):
-        idx = np.argmin(np.abs(calc_d_spacings - exp_d))
-        d_diff = abs(calc_d_spacings[idx] - exp_d)
-        intensity_diff = abs(calc_intensities[valid_indices][idx] - exp_intensity)
-        total_score += w_angle * d_diff + w_intensity * intensity_diff
-    return total_score
+        return 1e6
+
+    # Normalize intensities
+    exp_int = 100 * np.array(exp_intensities) / np.max(exp_intensities)
+    calc_int = 100 * calc_intensities[valid_indices] / np.max(calc_intensities[valid_indices])
+
+    # Get peak positions
+    if match_in_twotheta:
+        exp_pos = np.array(exp_peaks)
+        calc_pos = np.array(calc_pattern.x)[valid_indices]
+    else:
+        exp_pos = two_theta_to_d(exp_peaks, wavelength)
+        calc_pos = np.array(calc_pattern.d_hkls)[valid_indices]
+
+    # Build cost matrix
+    cost_matrix = np.zeros((len(exp_pos), len(calc_pos)))
+    for i, (p_exp, i_exp) in enumerate(zip(exp_pos, exp_int)):
+        for j, (p_calc, i_calc) in enumerate(zip(calc_pos, calc_int)):
+            p_diff = abs(p_exp - p_calc)
+            i_diff = abs(i_exp - i_calc)
+            weight = i_exp / 100.0  # reward strong peaks
+            cost_matrix[i, j] = weight * (w_angle * p_diff + w_intensity * i_diff)
+
+    # Match peaks
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+    matched_score = cost_matrix[row_ind, col_ind].sum()
+
+    # Penalty for unmatched peaks
+    assigned_exp = set(row_ind)
+    assigned_calc = set(col_ind)
+
+    unmatched_exp = set(range(len(exp_peaks))) - assigned_exp
+    unmatched_calc = set(range(len(valid_indices))) - assigned_calc
+    unmatched_count = len(unmatched_exp) + len(unmatched_calc)
+
+    penalty = unmatched_count * unmatched_penalty
+
+    # Final score
+    final_score = (matched_score + penalty) / len(exp_peaks)
+    return final_score
 
 
 full_range = (0.01, 179.9)
@@ -221,6 +287,78 @@ def calculate_xrd_pattern(structure, wavelength=1.7809, range=full_range):
     xrd_calc = XRDCalculator(wavelength=wavelength)
     pattern = xrd_calc.get_pattern(structure, two_theta_range=range)
     return pattern
+
+
+import os
+import json
+from types import SimpleNamespace
+
+# Define a filename for the cache (stored in the same directory as your app)
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CACHE_FILENAME = os.path.join(BASE_DIR, "xrd_cache.json")
+
+#CACHE_FILENAME = "xrd_cache.json"
+
+# Load the cache if it exists; otherwise, start with an empty dictionary.
+if os.path.exists(CACHE_FILENAME):
+    with open(CACHE_FILENAME, "r") as f:
+        xrd_db = json.load(f)
+    print("XRD DB")
+
+    print(xrd_db)
+    print("Trying to read from:", CACHE_FILENAME)
+else:
+    xrd_db = {}
+
+
+def get_xrd_pattern_cached(structure_id, structure, wavelength=1.7889, twotheta_range=full_range):
+
+    global xrd_db
+    # Check if pattern is in cache
+    if structure_id in xrd_db:
+        pat_dict = xrd_db[structure_id]
+        pattern = SimpleNamespace(**pat_dict)
+        return pattern
+    else:
+        # Compute the XRD pattern using your existing function.
+        pattern = calculate_xrd_pattern(structure, wavelength=wavelength, range=twotheta_range)
+
+        # Convert pattern attributes to numpy arrays for filtering.
+        x_array = np.array(pattern.x)
+        y_array = np.array(pattern.y)
+        d_array = np.array(pattern.d_hkls)
+
+        # Filter indices: keep only those peaks where intensity > 1.
+        valid_indices = np.where(y_array > 1)[0]
+
+        # Filter the arrays using these indices.
+        filtered_x = x_array[valid_indices].tolist()
+        filtered_y = y_array[valid_indices].tolist()
+        filtered_d_hkls = d_array[valid_indices].tolist()
+
+        # Filter hkls if available.
+        if hasattr(pattern, 'hkls'):
+            hkls_array = np.array(pattern.hkls)
+            filtered_hkls = hkls_array[valid_indices].tolist()
+        else:
+            filtered_hkls = pattern.hkls
+
+        # Create dictionary to be cached.
+        pat_dict = {
+            "x": filtered_x,
+            "y": filtered_y,
+            "d_hkls": filtered_d_hkls,
+            "hkls": filtered_hkls
+        }
+
+        # Add the new entry to the cache.
+        xrd_db[structure_id] = pat_dict
+        with open(CACHE_FILENAME, "w") as f:
+            print("ADDED TO THE CACHE")
+            json.dump(xrd_db, f)
+        return pattern
 
 
 session = requests.Session()
@@ -260,6 +398,10 @@ def get_structure_from_aflow(entry):
 
 # --- Streamlit Interface ---
 
+st.markdown("# NOTE:\n"
+            "Searching for structures is fast, but recalculating XRD patterns takes time.\n"
+            "A database for precomputed dhkl values and intensities is under development.\n"
+            "Please wait for it to build, or expect very slower performance. :[")
 
 # --- Experimental XRD Data Inputs ---
 st.subheader("Experimental XRD Data Inputs")
@@ -268,6 +410,9 @@ st.sidebar.header("📤 Upload Experimental XRD Data")
 exp_xrd_file = st.sidebar.file_uploader("Upload your XRD file (2 columns: 2θ and intensity)", type=['txt', 'csv', 'xy'])
 
 uploaded_x = uploaded_y = None
+experimental_peaks = "38, 55, 68, 82, 153, 174"
+experimental_intensities = "92, 40, 35, 55, 58, 64"
+prominence_threshold = st.sidebar.slider("Peak Detection Prominence", min_value=0.1, max_value=20.0, value=2.1, step=0.1)
 
 if exp_xrd_file is not None:
     try:
@@ -280,9 +425,26 @@ if exp_xrd_file is not None:
 
         st.sidebar.success("✅ XRD file uploaded and normalized successfully.")
 
-        # Preview uploaded data
-        if st.sidebar.checkbox("Show uploaded data preview"):
-            st.sidebar.write(user_xrd_data[:10, :])
+        autodetect = st.sidebar.checkbox("Auto-detect Peaks from Uploaded Data", value=True)
+        if autodetect:
+            # Adjust the prominence (or other parameters) as needed.
+            peaks_idx, properties = find_peaks(uploaded_y, prominence=prominence_threshold)
+            detected_positions = uploaded_x[peaks_idx]
+            detected_intensities = uploaded_y[peaks_idx]
+
+            # Filter out the likely Kα2 peaks.
+            filtered_positions, filtered_intensities = filter_kalpha2_peaks(detected_positions, detected_intensities,
+                                                                           )
+
+            st.sidebar.success(
+                f"Auto-detected {len(filtered_positions)} peaks after filtering out potential Kα2 peaks.")
+            if st.sidebar.checkbox("Show detected peaks (positions and intensities)"):
+                st.sidebar.write(np.column_stack((filtered_positions, filtered_intensities)))
+
+            # Use the auto-detected peaks as experimental peaks.
+            experimental_peaks = ", ".join(f"{x:.2f}" for x in filtered_positions)
+            experimental_intensities = ", ".join(f"{x:.2f}" for x in filtered_intensities)
+
     except Exception as e:
         st.sidebar.error(f"❌ Error reading file: {e}")
 
@@ -293,14 +455,17 @@ with col00:
         unsafe_allow_html=True)
 with col01:
     st.markdown("### Peak Positions (2θ)")
-    exp_peaks_str = st.text_input("Enter experimental peak positions separated by commas", "38, 55, 68, 82, 153, 174")
+    # The 'value' parameter is now set to default_peaks_str.
+    exp_peaks_str = st.text_input("Enter experimental peak positions separated by commas",
+                                  value=experimental_peaks, key="peak_input")
 with col02:
     st.markdown("### Intensities (normalized)")
+    # Similarly for intensities.
     exp_intensities_str = st.text_input("Enter corresponding experimental intensities separated by commas",
-                                        "92, 40, 35, 55, 58, 64")
+                                        value=experimental_intensities, key="intensity_input")
 with col03:
     st.markdown("### Wavelength (Å)")
-    user_wavelength = st.number_input("Enter the X-rays wavelength (in Å)", value=1.7809, format="%.4f")
+    user_wavelength = st.number_input("Enter the X-rays wavelength (in Å)", value=1.7889, format="%.4f")
 
 try:
     experimental_peaks = [float(x.strip()) for x in exp_peaks_str.split(",") if x.strip()]
@@ -596,6 +761,50 @@ elif search_aflow:
             st.error(f"AFLOW error: {e}")
         st.session_state.full_structures_see = combined_structures
 
+if exp_xrd_file is not None and autodetect:
+    import plotly.graph_objects as go
+
+    # Create a scatter trace for the full uploaded XRD pattern.
+    trace_uploaded = go.Scatter(
+        x=uploaded_x,
+        y=uploaded_y,
+        mode="lines+markers",
+        name="Uploaded XRD Pattern",
+        line=dict(width=2)
+    )
+
+    # Create a scatter trace for the auto-detected peaks.
+    # Here, we assume 'filtered_positions' and 'filtered_intensities' exist from auto-detection.
+    trace_peaks = go.Scatter(
+        x=filtered_positions,
+        y=filtered_intensities,
+        mode="markers",
+        name="Detected Peaks",
+        marker=dict(color="red", size=10, symbol="diamond")
+    )
+
+    # Build the figure with both traces.
+    fig_upload = go.Figure(data=[trace_uploaded, trace_peaks])
+    fig_upload.update_layout(
+        height=400,
+        title=dict(text="Interactive XRD Pattern (2θ)", font=dict(size=24)),
+        xaxis=dict(title=dict(text="2θ (°)", font=dict(size=30, color="black")),
+                   tickfont=dict(size=30, color="black")),
+        yaxis=dict(title=dict(text="Intensity", font=dict(size=30, color="black")),
+                   tickfont=dict(size=30, color="black"), showgrid=False, range=[-10, 120]),
+        legend=dict(
+            font=dict(size=24, color="black"),
+            orientation="h",
+            y=-0.5,
+            x=0.5,
+            xanchor="center"
+        ),
+        template="plotly_white",
+        hovermode='x',
+        hoverlabel=dict(font=dict(size=20), )
+    )
+
+    st.plotly_chart(fig_upload, use_container_width=True)
 # --- XRD Pattern Calculation and Matching ---
 st.subheader("Comparing Calculated XRD Patterns to Experimental Data")
 compare_intensities = st.checkbox("Compare intensities as well", value=True)
@@ -616,14 +825,26 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
             candidates = []
             idxx = 1
             for material_id, structure in st.session_state.full_structures_see.items():
+                print(material_id)
                 try:
-                    pattern = calculate_xrd_pattern(structure, wavelength=user_wavelength, range=full_range)
+                    start_total = time.perf_counter()
+                    start_cache = time.perf_counter()
+                    #pattern = calculate_xrd_pattern(structure, wavelength=user_wavelength, range=full_range)
+                    pattern = get_xrd_pattern_cached(material_id, structure, wavelength=user_wavelength,
+                                                     twotheta_range=full_range)
+                    end_cache = time.perf_counter()
+                   # st.write(
+                    #    f"Time for XRD pattern (cache check or computation): {end_cache - start_cache:.4f} seconds")
                     if compare_intensities:
+                        start_cache = time.perf_counter()
                         score = get_peak_match_score_with_intensity(
                             experimental_peaks, experimental_intensities, pattern, user_wavelength,
                             w_angle=1, w_intensity=1, min_intensity=min_intensity_threshold
                         )
                         method = "combined d-spacing and intensity"
+                        end_cache = time.perf_counter()
+                       # st.write(
+                       #     f"COMPARE INTENSITIES (cache check or computation): {end_cache - start_cache:.4f} seconds")
                     else:
                         score = get_peak_match_score(
                             experimental_peaks, pattern, user_wavelength, min_intensity=min_intensity_threshold
