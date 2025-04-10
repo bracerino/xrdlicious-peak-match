@@ -294,21 +294,13 @@ import json
 from types import SimpleNamespace
 
 # Define a filename for the cache (stored in the same directory as your app)
-import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CACHE_FILENAME = os.path.join(BASE_DIR, "xrd_cache.json")
-
-#CACHE_FILENAME = "xrd_cache.json"
+CACHE_FILENAME = "xrd_cache.json"
 
 # Load the cache if it exists; otherwise, start with an empty dictionary.
 if os.path.exists(CACHE_FILENAME):
     with open(CACHE_FILENAME, "r") as f:
         xrd_db = json.load(f)
-    print("XRD DB")
-
-    print(xrd_db)
-    print("Trying to read from:", CACHE_FILENAME)
 else:
     xrd_db = {}
 
