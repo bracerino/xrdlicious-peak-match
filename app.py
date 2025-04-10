@@ -230,11 +230,11 @@ with col00:
     st.markdown("### 🚧 Upload Your XRD data and Automatically find peak positions (Under reconstruction, will be added in future update 🚧)", unsafe_allow_html=True)
 with col01:
     st.markdown("### Peak Positions (2θ)")
-    exp_peaks_str = st.text_input("Enter experimental peak positions separated by commas", "44, 65, 80, 112, 159")
+    exp_peaks_str = st.text_input("Enter experimental peak positions separated by commas", "38, 55, 68, 82, 153, 174")
 with col02:
     st.markdown("### Intensities (normalized)")
     exp_intensities_str = st.text_input("Enter corresponding experimental intensities separated by commas",
-                                        "85, 16, 32, 18, 85")
+                                        "92, 40, 35, 55, 58, 64")
 with col03:
     st.markdown("### Wavelength (Å)")
     user_wavelength = st.number_input("Enter the X-rays wavelength (in Å)", value=1.7809, format="%.4f")
