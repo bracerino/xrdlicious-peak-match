@@ -251,7 +251,7 @@ except Exception as e:
 
 
 
-st.markdown("### Search for Structures in Both Materials Project and AFLOW")
+st.markdown("### Search for Structures in Materials Project or AFLOW Databases")
 
 
 col1, col2 = st.columns(2)
