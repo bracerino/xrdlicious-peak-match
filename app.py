@@ -86,6 +86,9 @@ with col1:
         "🔬 [Main 🍕 XRDlicious HERE](https://xrdlicious.com/). 🌀 Developed by [IMPLANT team](https://implant.fs.cvut.cz/). 📺 [Quick tutorial HERE.](https://youtu.be/ZiRbcgS_cd0)"
     )
 from PIL import Image
+with col2:
+    image = Image.open("images/4.png")
+    st.image(image)
 
 
 convert_to_conventional = True
