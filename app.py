@@ -306,9 +306,11 @@ if search_both:
                             structure_to_use = full_structure
                         combined_structures[doc.material_id] = structure_to_use
                     st.success(f"Materials Project: Found {len(docs)} structures.")
+                    length_mp = len(docs)
                 else:
                     st.warning("Materials Project: No matching structures found.")
-            length_mp = len(docs)
+                    length_mp = 0
+            
         except Exception as e:
             st.error(f"Materials Project error: {e}")
 
@@ -343,10 +345,12 @@ if search_both:
                     if structure is not None:
                         combined_structures[entry.auid] = structure
                 st.success(f"AFLOW: Found {len(results)} structures.")
+                length_aflow = len(results)
+            length = length_mp+length_aflow
             else:
                 st.warning("AFLOW: No matching structures found.")
-            length_aflow = len(results)
-            length = length_mp+length_aflow
+                length = 0
+            
         except Exception as e:
             st.error(f"AFLOW error: {e}")
 
@@ -382,6 +386,7 @@ elif search_mp:
                     length = len(docs)
                 else:
                     st.warning("Materials Project: No matching structures found.")
+                    length = 0
 
         except Exception as e:
             st.error(f"Materials Project error: {e}")
@@ -422,6 +427,7 @@ elif search_aflow:
                 length = len(results)
             else:
                 st.warning("AFLOW: No matching structures found.")
+                length = 0
         except Exception as e:
             st.error(f"AFLOW error: {e}")
         st.session_state.full_structures_see = combined_structures
