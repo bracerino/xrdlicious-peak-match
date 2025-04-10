@@ -346,7 +346,7 @@ if search_both:
                         combined_structures[entry.auid] = structure
                 st.success(f"AFLOW: Found {len(results)} structures.")
                 length_aflow = len(results)
-            length = length_mp+length_aflow
+                length = length_mp+length_aflow
             else:
                 st.warning("AFLOW: No matching structures found.")
                 length = 0
