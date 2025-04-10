@@ -707,7 +707,7 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 ),
                 template="plotly_white",
                 hovermode='x',
-                hoverlabel=dict(font=dict(size=22),)
+                hoverlabel=dict(font=dict(size=20),)
             )
 
             # Display your interactive plot
