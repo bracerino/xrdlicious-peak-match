@@ -11,7 +11,7 @@ from scipy.optimize import linear_sum_assignment
 import plotly.graph_objs as go
 
 from aflow import search, K
-from aflow import search 
+from aflow import search
 import aflow.keywords as AFLOW_K
 from pymatgen.core import Structure
 import aflow
@@ -78,19 +78,14 @@ components.html(
 
 st.sidebar.markdown("## 🍕 XRDlicious – Peak Matcher")
 
-
-
-col1, col2 = st.columns([1.25,1])
+col1, col2 = st.columns([1.25, 1])
 with col1:
     st.title(
         "🍕 XRDlicious – Peak Matcher: Match Experimental Powder XRD Patterns with Structures from Materials Project or AFLOW Databases")
     st.info(
-    "🔬 [Main 🍕 XRDlicious HERE](https://xrdlicious.com/). 🌀 Developed by [IMPLANT team](https://implant.fs.cvut.cz/). 📺 [Quick tutorial HERE.](https://youtu.be/ZiRbcgS_cd0)"
+        "🔬 [Main 🍕 XRDlicious HERE](https://xrdlicious.com/). 🌀 Developed by [IMPLANT team](https://implant.fs.cvut.cz/). 📺 [Quick tutorial HERE.](https://youtu.be/ZiRbcgS_cd0)"
     )
 from PIL import Image
-with col2:
-    image = Image.open("images/4.png")
-    st.image(image)
 
 
 convert_to_conventional = True
@@ -100,6 +95,29 @@ MP_API_KEY = "UtfGa1BUI3RlWYVwfpMco2jVt8ApHOye"
 
 
 # --- Helper Functions ---
+
+
+def get_cod_entries(params):
+    response = requests.get('https://www.crystallography.net/cod/result', params=params)
+    if response.status_code == 200:
+        results = response.json()
+        return results  # Returns a list of entries
+    else:
+        st.error(f"COD search error: {response.status_code}")
+        return []
+
+def get_cif_from_cod(entry):
+    file_url = entry.get('file')
+    if file_url:
+        response = requests.get(f"https://www.crystallography.net/cod/{file_url}.cif")
+        if response.status_code == 200:
+            return response.text
+    return None
+
+def get_cod_str(cif_content):
+    parser = CifParser.from_str(cif_content)
+    structure = parser.get_structures(primitive=False)[0]
+    return structure
 
 def update_candidate_index():
     try:
@@ -112,7 +130,6 @@ def update_candidate_index():
 
 
 def two_theta_to_d(two_theta, wavelength):
-
     theta_rad = np.radians(np.array(two_theta) / 2)
     d_spacing = np.where(theta_rad == 0, np.inf, wavelength / (2 * np.sin(theta_rad)))
     return d_spacing
@@ -121,6 +138,46 @@ def two_theta_to_d(two_theta, wavelength):
 def get_full_conventional_structure(structure, symprec=0.1):
     analyzer = SpacegroupAnalyzer(structure, symprec=symprec)
     return analyzer.get_conventional_standard_structure()
+
+import spglib
+def get_full_conventional_structure(structure, symprec=1e-3):
+    lattice = structure.lattice.matrix
+    positions = structure.frac_coords
+
+
+    species_list = [site.species for site in structure]
+    species_to_type = {}
+    type_to_species = {}
+    type_index = 1
+
+    types = []
+    for sp in species_list:
+        sp_tuple = tuple(sorted(sp.items()))  # make it hashable
+        if sp_tuple not in species_to_type:
+            species_to_type[sp_tuple] = type_index
+            type_to_species[type_index] = sp
+            type_index += 1
+        types.append(species_to_type[sp_tuple])
+
+    cell = (lattice, positions, types)
+
+    dataset = spglib.get_symmetry_dataset(cell, symprec=symprec)
+
+    std_lattice = dataset['std_lattice']
+    std_positions = dataset['std_positions']
+    std_types = dataset['std_types']
+
+    new_species_list = [type_to_species[t] for t in std_types]
+
+    conv_structure = Structure(
+        lattice=std_lattice,
+        species=new_species_list,
+        coords=std_positions,
+        coords_are_cartesian=False
+    )
+
+    return conv_structure
+
 
 
 def get_peak_match_score(exp_peaks, calc_pattern, wavelength, min_intensity=5):
@@ -165,6 +222,7 @@ def calculate_xrd_pattern(structure, wavelength=1.7809, range=full_range):
 
 session = requests.Session()
 
+
 @st.cache_data(show_spinner=False)
 def cached_get_structure_from_aflow(auid, aurl, files):
     try:
@@ -191,6 +249,7 @@ def cached_get_structure_from_aflow(auid, aurl, files):
     except Exception as e:
         st.error(f"Error retrieving structure for AFLOW entry {auid}: {e}")
     return None
+
 
 def get_structure_from_aflow(entry):
     return cached_get_structure_from_aflow(entry.auid, entry.aurl, entry.files)
@@ -224,10 +283,11 @@ if exp_xrd_file is not None:
     except Exception as e:
         st.sidebar.error(f"❌ Error reading file: {e}")
 
-
 col00, col01, col02, col03 = st.columns([2.5, 2, 2, 1])
 with col00:
-    st.markdown("### 🚧 Upload Your XRD data and Automatically find peak positions (Under reconstruction, will be added in future update 🚧)", unsafe_allow_html=True)
+    st.markdown(
+        "### 🚧 Upload Your XRD data and Automatically find peak positions (Under reconstruction, will be added in future update 🚧)",
+        unsafe_allow_html=True)
 with col01:
     st.markdown("### Peak Positions (2θ)")
     exp_peaks_str = st.text_input("Enter experimental peak positions separated by commas", "38, 55, 68, 82, 153, 174")
@@ -249,39 +309,82 @@ except Exception as e:
     st.error(f"Error parsing experimental data: {e}")
     experimental_peaks, experimental_intensities = None, None
 
-
-
 st.markdown("### Search for Structures in Materials Project or AFLOW Databases")
 
-
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 with col1:
     mp_search_query = st.text_input("Materials Project: Enter elements separated by spaces (e.g., Sr Ti O):",
                                     value="Sr Ti O", key="mp_search")
 with col2:
     aflow_elements_input = st.text_input("AFLOW: Enter elements separated by spaces (e.g., Ti O):", value="Ti O",
                                          key="aflow_search")
+with col3:
+    cod_elements_input = st.text_input("COD: Enter elements separated by spaces (e.g., Ti O)", value="Ti O", key="cod_search")
 
-col_btn1, col_btn2, col_btn3 = st.columns(3)
+
+col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
 with col_btn1:
-    search_both = st.button("Search Both Databases")
+    search_both = st.button("Search All Databases")
 with col_btn2:
     search_mp = st.button("Search MP Only")
 with col_btn3:
     search_aflow = st.button("Search AFLOW Only")
+with col_btn4:
+    search_cod = st.button("Search COD Only")
 
 
 def clear_candidates():
     st.session_state.pop("candidate_list", None)
     st.session_state.pop("candidate_index", None)
 
+
 # --- Search Section ---
 combined_structures = {}
+
+if search_cod:
+    clear_candidates()
+    with st.spinner(
+            f"Searching **the COD database**, please wait. Note that especially the first search typically takes a bit longer while establishing initial connections. 😊"):
+        # Build COD search parameters. Here we assume the user enters one or more elements.
+        elements = [el.strip() for el in cod_elements_input.split() if el.strip()]
+        if elements:
+            params = {'format': 'json'}
+            # Set search parameters for each element (COD expects keys like 'el1', 'el2', etc.)
+            for i, el in enumerate(elements, start=1):
+                params[f'el{i}'] = el
+            # Set strict search to ensure the number of elements matches exactly.
+            params['strictmin'] = str(len(elements))
+            params['strictmax'] = str(len(elements))
+
+            cod_entries = get_cod_entries(params)
+            if cod_entries:
+                status_placeholder = st.empty()
+                for entry in cod_entries:
+                    cif_content = get_cif_from_cod(entry)
+                    if cif_content:
+                        try:
+                            # Use a unique key (e.g., prefix with "cod_") to avoid collision with MP/AFLOW IDs.
+                            structure = get_full_conventional_structure(get_cod_str(cif_content))
+                            status_placeholder.markdown(
+                                f"- **Structure loaded:** `{structure.composition.reduced_formula}` (cod_{entry.get('file')})")
+
+                            combined_structures[f"{entry.get('file')}"] = structure
+                        except Exception as e:
+                            st.error(f"Error processing COD entry {entry.get('file')}: {e}")
+                st.success(f"COD: Found {len(cod_entries)} structures.")
+                length = len(cod_entries)
+            else:
+                st.warning("COD: No matching structures found.")
+                length = 0
+        else:
+            st.error("Please enter at least one element for the COD search.")
+        st.session_state.full_structures_see = combined_structures
 
 if search_both:
     clear_candidates()
     # --- Materials Project Search ---
-    with st.spinner(f"Searching **the MP database**, please wait. Note that especially the first search typically takes a bit longer while establishing initial connections. 😊"):
+    with st.spinner(
+            f"Searching **the MP database**, please wait. Note that especially the first search typically takes a bit longer while establishing initial connections. 😊"):
         try:
             with MPRester(MP_API_KEY) as mpr:
                 elements_list = sorted(set(mp_search_query.split()))
@@ -291,6 +394,7 @@ if search_both:
                     fields=["material_id", "formula_pretty", "symmetry"]
                 )
                 if docs:
+                    status_placeholder = st.empty()
                     for doc in docs:
                         full_structure = mpr.get_structure_by_material_id(doc.material_id)
                         if convert_to_conventional:
@@ -305,17 +409,21 @@ if search_both:
                         else:
                             structure_to_use = full_structure
                         combined_structures[doc.material_id] = structure_to_use
+                        status_placeholder.markdown(
+                            f"- **Structure loaded:** `{structure_to_use.composition.reduced_formula}` ({doc.material_id})"
+                        )
                     st.success(f"Materials Project: Found {len(docs)} structures.")
                     length_mp = len(docs)
                 else:
                     st.warning("Materials Project: No matching structures found.")
                     length_mp = 0
-            
+
         except Exception as e:
             st.error(f"Materials Project error: {e}")
 
     # --- AFLOW Search ---
-    with st.spinner(f"Searching the **AFLOW database**, please wait.  Note that especially the first search typically takes a bit longer while establishing initial connections. 😊"):
+    with st.spinner(
+            f"Searching the **AFLOW database**, please wait.  Note that especially the first search typically takes a bit longer while establishing initial connections. 😊"):
         try:
             if aflow_elements_input:
                 elements = re.split(r'[\s,]+', aflow_elements_input.strip())
@@ -327,6 +435,7 @@ if search_both:
                 ordered_str = ""
                 aflow_nspecies = 0
             import aflow
+
             results = list(
                 aflow.search(catalog="icsd")
                 .filter((AFLOW_K.species % ordered_str) & (AFLOW_K.nspecies == aflow_nspecies))
@@ -340,25 +449,66 @@ if search_both:
                 )
             )
             if results:
+                status_placeholder = st.empty()
                 for entry in results:
                     structure = get_structure_from_aflow(entry)
+                    structure = get_full_conventional_structure(structure)
                     if structure is not None:
                         combined_structures[entry.auid] = structure
+                    status_placeholder.markdown(
+                        f"- **Structure loaded:** `{structure.composition.reduced_formula}` (aflow_{entry.auid})"
+                    )
                 st.success(f"AFLOW: Found {len(results)} structures.")
                 length_aflow = len(results)
-                length = length_mp+length_aflow
             else:
                 st.warning("AFLOW: No matching structures found.")
-                length = 0
-            
+                length_aflow = 0
         except Exception as e:
             st.error(f"AFLOW error: {e}")
+        st.session_state.full_structures_see = combined_structures
 
-    st.session_state.full_structures_see = combined_structures
+    with st.spinner(
+            f"Searching **the COD database**, please wait. Note that especially the first search typically takes a bit longer while establishing initial connections. 😊"):
+        # Build COD search parameters. Here we assume the user enters one or more elements.
+        elements = [el.strip() for el in cod_elements_input.split() if el.strip()]
+        if elements:
+            params = {'format': 'json'}
+            # Set search parameters for each element (COD expects keys like 'el1', 'el2', etc.)
+            for i, el in enumerate(elements, start=1):
+                params[f'el{i}'] = el
+            # Set strict search to ensure the number of elements matches exactly.
+            params['strictmin'] = str(len(elements))
+            params['strictmax'] = str(len(elements))
+
+            cod_entries = get_cod_entries(params)
+            if cod_entries:
+                status_placeholder = st.empty()
+                for entry in cod_entries:
+                    cif_content = get_cif_from_cod(entry)
+                    if cif_content:
+                        try:
+                            # Use a unique key (e.g., prefix with "cod_") to avoid collision with MP/AFLOW IDs.
+                            structure = get_full_conventional_structure(get_cod_str(cif_content))
+                            status_placeholder.markdown(
+                                f"- **Structure loaded:** `{structure.composition.reduced_formula}` (cod_{entry.get('file')})")
+
+                            combined_structures[f"{entry.get('file')}"] = structure
+                        except Exception as e:
+                            st.error(f"Error processing COD entry {entry.get('file')}: {e}")
+                st.success(f"COD: Found {len(cod_entries)} structures.")
+                length_cod = len(cod_entries)
+            else:
+                st.warning("COD: No matching structures found.")
+                length_cod = 0
+            length = length_mp + length_aflow + length_cod
+        else:
+            st.error("Please enter at least one element for the COD search.")
+        st.session_state.full_structures_see = combined_structures
 
 elif search_mp:
     clear_candidates()
-    with st.spinner(f"Searching the **MP database**, please wait. The first search typically takes a bit longer while establishing initial connections. 😊"):
+    with st.spinner(
+            f"Searching the **MP database**, please wait. The first search typically takes a bit longer while establishing initial connections. 😊"):
         try:
             with MPRester(MP_API_KEY) as mpr:
                 elements_list = sorted(set(mp_search_query.split()))
@@ -368,6 +518,7 @@ elif search_mp:
                     fields=["material_id", "formula_pretty", "symmetry"]
                 )
                 if docs:
+                    status_placeholder = st.empty()
                     for doc in docs:
                         full_structure = mpr.get_structure_by_material_id(doc.material_id)
                         if convert_to_conventional:
@@ -381,7 +532,10 @@ elif search_mp:
                             structure_to_use = analyzer.get_primitive_standard_structure()
                         else:
                             structure_to_use = full_structure
-                        combined_structures[ doc.material_id] = structure_to_use
+                        combined_structures[doc.material_id] = structure_to_use
+                        status_placeholder.markdown(
+                            f"- **Structure loaded:** `{structure_to_use.composition.reduced_formula}` ({doc.material_id})"
+                        )
                     st.success(f"Materials Project: Found {len(docs)} structures.")
                     length = len(docs)
                 else:
@@ -394,7 +548,8 @@ elif search_mp:
 
 elif search_aflow:
     clear_candidates()
-    with st.spinner(f"Searching the **AFLOW database**, please wait. The first search typically takes a bit longer while establishing initial connections. 😊"):
+    with st.spinner(
+            f"Searching the **AFLOW database**, please wait. The first search typically takes a bit longer while establishing initial connections. 😊"):
         try:
             if aflow_elements_input:
                 elements = re.split(r'[\s,]+', aflow_elements_input.strip())
@@ -406,6 +561,7 @@ elif search_aflow:
                 ordered_str = ""
                 aflow_nspecies = 0
             import aflow
+
             results = list(
                 aflow.search(catalog="icsd")
                 .filter((AFLOW_K.species % ordered_str) & (AFLOW_K.nspecies == aflow_nspecies))
@@ -419,10 +575,15 @@ elif search_aflow:
                 )
             )
             if results:
+                status_placeholder = st.empty()
                 for entry in results:
                     structure = get_structure_from_aflow(entry)
+                    structure = get_full_conventional_structure(structure)
                     if structure is not None:
                         combined_structures[entry.auid] = structure
+                    status_placeholder.markdown(
+                        f"- **Structure loaded:** `{structure.composition.reduced_formula}` (aflow_{entry.auid})"
+                    )
                 st.success(f"AFLOW: Found {len(results)} structures.")
                 length = len(results)
             else:
@@ -431,7 +592,6 @@ elif search_aflow:
         except Exception as e:
             st.error(f"AFLOW error: {e}")
         st.session_state.full_structures_see = combined_structures
-
 
 # --- XRD Pattern Calculation and Matching ---
 st.subheader("Comparing Calculated XRD Patterns to Experimental Data")
@@ -474,8 +634,9 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                     space_group = SpacegroupAnalyzer(structure).get_space_group_symbol()
                     space_group_number = SpacegroupAnalyzer(structure).get_space_group_number()
                     with st.spinner("Comparing structures..."):
-                        current_message = (f"**Comparing structure {idxx}/{length}** {material_id} ({comp}) using {method} method. "
-                                           f"Resulting match score: {score:.2f}")
+                        current_message = (
+                            f"**Comparing structure: {idxx}/{length}** {material_id} ({comp}) using {method} method. "
+                            f"Resulting match score: {score:.2f}")
                         status_messages.append(current_message)
                         status_placeholder.write(status_messages[-1])
 
@@ -521,7 +682,6 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 on_change=update_candidate_index  # update candidate_index when changed
             )
 
-
             col_nav, col_plot = st.columns([1, 3])
             with col_nav:
                 if st.button("Next Candidate", key="next_candidate"):
@@ -556,23 +716,26 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 if selected_candidate['id'].startswith("mp"):
                     linnk = f"https://materialsproject.org/materials/{selected_candidate['id']}"
                     down_name = 'mp'
-                else:
+                elif selected_candidate['id'].startswith("aflow"):
                     down_name = 'aflow'
                     linnk = f"https://aflowlib.duke.edu/search/ui/material/?id={selected_candidate['id']}"
+                else:
+                    linnk = f"https://www.crystallography.net/cod/{selected_candidate['id']}.html"
+                    down_name = 'cod'
+
 
                 st.write(f"**Lattice Parameters:** {selected_candidate['lattice_str']}")
                 st.write("**Link:**", linnk)
-                st.write(f"**Space Group:** {selected_candidate['space_group']} ({selected_candidate['space_group_number']})")
+                st.write(
+                    f"**Space Group:** {selected_candidate['space_group']} ({selected_candidate['space_group_number']})")
                 st.write(f"**Lattice Volume:** {selected_candidate['lattice_volume']:.2f} Å³")
                 st.write(f"**Number of Atoms:** {selected_candidate['num_atoms']}")
                 # --- Download CIF Button ---
-                cif_writer = CifWriter(st.session_state.full_structures_see[selected_candidate['id']], symprec=0.01 )
+                cif_writer = CifWriter(st.session_state.full_structures_see[selected_candidate['id']], symprec=0.01)
 
                 cif_data = str(cif_writer)
 
                 file_name = f"{selected_candidate['composition']}_{selected_candidate['space_group_number']}_{down_name}.cif"
-
-
 
                 # Add a download button for the CIF file.
                 st.download_button(
@@ -609,7 +772,7 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 two_theta_val = pattern.x[i]
                 vertical_x_calc.extend([two_theta_val, two_theta_val, None])
                 vertical_y_calc.extend([0, pattern.y[i], None])
-                #vertical_hover_calc.extend([f"<b>hkl: {hkl_text}</b>", f"<b>hkl: {hkl_text}</b>", None])
+                # vertical_hover_calc.extend([f"<b>hkl: {hkl_text}</b>", f"<b>hkl: {hkl_text}</b>", None])
                 vertical_hover_calc.extend([hover_text, hover_text, None])
             trace_calc = go.Scatter(
                 x=vertical_x_calc,
@@ -619,8 +782,8 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 line=dict(color="black", width=2, dash="solid"),
                 hoverinfo="text",
                 text=vertical_hover_calc,
-                #hovertemplate="<b>Calculated Peak:</b><br>%{text}<br><b>2θ = %{x:.2f}°</b><br><b>Intensity = %{y:.2f}</b><extra></extra>"
-                hovertemplate = "<span style='color:black;'><b>Calculated Peak:</b><br>%{text}<br>2θ = %{x:.2f}°<br>Intensity = %{y:.2f}</span><extra></extra>"
+                # hovertemplate="<b>Calculated Peak:</b><br>%{text}<br><b>2θ = %{x:.2f}°</b><br><b>Intensity = %{y:.2f}</b><extra></extra>"
+                hovertemplate="<span style='color:black;'><b>Calculated Peak:</b><br>%{text}<br>2θ = %{x:.2f}°<br>Intensity = %{y:.2f}</span><extra></extra>"
             )
 
             exp_assigned_x = []
@@ -649,7 +812,7 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                         assigned_exp_idxs.add(exp_idx)
             for i, (exp_angle, exp_intensity) in enumerate(zip(experimental_peaks, experimental_intensities)):
                 d_exp = two_theta_to_d(exp_angle, user_wavelength)
-                hover_text = (f"<b>Exp Peak {i + 1}:</b><br>d-spacing = {d_exp:.4f} Å<br>" 
+                hover_text = (f"<b>Exp Peak {i + 1}:</b><br>d-spacing = {d_exp:.4f} Å<br>"
                               f"2θ = {exp_angle:.2f}°<br>Intensity = {exp_intensity:.2f}")
                 if i in assigned_exp_idxs:
                     exp_assigned_x.extend([exp_angle, exp_angle, None])
@@ -667,8 +830,8 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 line=dict(color="blue", width=2, dash="dot"),
                 hoverinfo="text",
                 text=exp_assigned_hover,
-                #hovertemplate="<b>Matched Exp Peak:</b><br>%{text}<extra></extra>"
-                hovertemplate = "<span style='color:blue;'><b>Matched Exp Peak:</b><br>%{text}</span><extra></extra>"
+                # hovertemplate="<b>Matched Exp Peak:</b><br>%{text}<extra></extra>"
+                hovertemplate="<span style='color:blue;'><b>Matched Exp Peak:</b><br>%{text}</span><extra></extra>"
             )
             trace_exp_unassigned = go.Scatter(
                 x=exp_unassigned_x,
@@ -678,8 +841,8 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 line=dict(color="red", width=2, dash="dot"),
                 hoverinfo="text",
                 text=exp_unassigned_hover,
-               # hovertemplate="<b>Unmatched Exp Peak:</b><br>%{text}<extra></extra>"
-                hovertemplate = "<span style='color:red;'><b>Unmatched Exp Peak:</b><br>%{text}</span><extra></extra>"
+                # hovertemplate="<b>Unmatched Exp Peak:</b><br>%{text}<extra></extra>"
+                hovertemplate="<span style='color:red;'><b>Unmatched Exp Peak:</b><br>%{text}</span><extra></extra>"
             )
             plot_data = [trace_calc, trace_exp_assigned, trace_exp_unassigned]
 
@@ -691,8 +854,8 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                     mode="lines+markers",
                     name="User Uploaded XRD",
                     line=dict(dash='solid', color="green", width=1),
-                   # hovertemplate="<b>User XRD Data:</b><br>2θ = %{x:.2f}°<br>Intensity = %{y:.2f}<extra></extra>"
-                    hovertemplate = "<span style='color:green;'><b>User XRD Data:</b><br>2θ = %{x:.2f}°<br>Intensity = %{y:.2f}</span><extra></extra>",
+                    # hovertemplate="<b>User XRD Data:</b><br>2θ = %{x:.2f}°<br>Intensity = %{y:.2f}<extra></extra>"
+                    hovertemplate="<span style='color:green;'><b>User XRD Data:</b><br>2θ = %{x:.2f}°<br>Intensity = %{y:.2f}</span><extra></extra>",
                     marker=dict(color='green', size=3.5)
                 )
                 plot_data.append(user_trace)
@@ -702,18 +865,20 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
             fig.update_layout(
                 height=900,
                 title=dict(text="Interactive XRD Pattern (2θ)", font=dict(size=24)),
-                xaxis=dict(title=dict(text="2θ (°)", font=dict(size=30,  color="black")), tickfont=dict(size=30,  color="black")),
-                yaxis=dict(title=dict(text="Intensity", font=dict(size=30,  color="black")), tickfont=dict(size=30,  color="black"), showgrid=False,range=[-10, 120] ),
+                xaxis=dict(title=dict(text="2θ (°)", font=dict(size=30, color="black")),
+                           tickfont=dict(size=30, color="black")),
+                yaxis=dict(title=dict(text="Intensity", font=dict(size=30, color="black")),
+                           tickfont=dict(size=30, color="black"), showgrid=False, range=[-10, 120]),
                 legend=dict(
                     font=dict(size=24, color="black"),
-                    orientation="h",  
-                    y=-0.3, 
-                    x=0.5,  
+                    orientation="h",
+                    y=-0.3,
+                    x=0.5,
                     xanchor="center"
                 ),
                 template="plotly_white",
                 hovermode='x',
-                hoverlabel=dict(font=dict(size=20),)
+                hoverlabel=dict(font=dict(size=20), )
             )
 
             # Display your interactive plot
