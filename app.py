@@ -934,11 +934,11 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                     space_group = SpacegroupAnalyzer(structure).get_space_group_symbol()
                     space_group_number = SpacegroupAnalyzer(structure).get_space_group_number()
                     with st.spinner("Comparing structures..."):
-                       if in_data_or == "This structure is already computed in database. Reading data from it.":
+                        if in_data_or == "This structure is already computed in database. Reading data from it.":
                             current_message = (
                                 f"**✅ {in_data_or}**\n\n**Comparing structure: {idxx}/{length}** {material_id} ({comp}) using {method} method. "
                                 f"Resulting match score: {score:.2f} ⭐")
-                       else:
+                        else:
                             current_message = (
                                 f"**🚧 {in_data_or}**\n\n**Comparing structure: {idxx}/{length}** {material_id} ({comp}) using {method} method. "
                                 f"Resulting match score: {score:.2f} ⭐")
