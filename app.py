@@ -773,7 +773,7 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 try:
                     #pattern = calculate_xrd_pattern(structure, wavelength=user_wavelength, range=full_range)
                     #pattern = get_xrd_pattern_cached(material_id, structure, wavelength=user_wavelength,
-                                                     twotheta_range=full_range)
+                     #                                twotheta_range=full_range)
                     pattern = calculate_xrd_pattern(structure, wavelength=user_wavelength, range=full_range)
                    # st.write(
                     #    f"Time for XRD pattern (cache check or computation): {end_cache - start_cache:.4f} seconds")
