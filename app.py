@@ -934,9 +934,14 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                     space_group = SpacegroupAnalyzer(structure).get_space_group_symbol()
                     space_group_number = SpacegroupAnalyzer(structure).get_space_group_number()
                     with st.spinner("Comparing structures..."):
-                        current_message = (
-                            f"**{in_data_or}**\n\n**Comparing structure: {idxx}/{length}** {material_id} ({comp}) using {method} method. "
-                            f"Resulting match score: {score:.2f} ⭐")
+                       if in_data_or == "This structure is already computed in database. Reading data from it.":
+                            current_message = (
+                                f"**✅ {in_data_or}**\n\n**Comparing structure: {idxx}/{length}** {material_id} ({comp}) using {method} method. "
+                                f"Resulting match score: {score:.2f} ⭐")
+                        else:
+                            current_message = (
+                                f"**🚧 {in_data_or}**\n\n**Comparing structure: {idxx}/{length}** {material_id} ({comp}) using {method} method. "
+                                f"Resulting match score: {score:.2f} ⭐")
                         status_messages.append(current_message)
                         status_placeholder.write(status_messages[-1])
 
@@ -1209,16 +1214,21 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                         }
                         assigned_exp_idxs.add(exp_idx)
             displayed_peak = False
-            for i, (calc_angle, calc_intensity) in enumerate(zip(pattern.x, pattern.y), start=1):
+            for i, (orig_angle, calc_intensity) in enumerate(zip(pattern.x, pattern.y), start=1):
                 if calc_intensity < detail_intensity_filter:
                     continue
-                calc_d = np.array(pattern.d_hkls)[i - 1]
+                # Obtain the corresponding d-spacing for this peak:
+                calc_d = pattern.d_hkls[i - 1]
+                # Recalculate 2θ using the current user_wavelength:
+                two_theta_new = 2 * np.degrees(np.arcsin(user_wavelength / (2 * calc_d)))
+
                 if (i - 1) in assignment:
                     exp_info = assignment[i - 1]
+                    # Optionally recalc experimental d-spacing for display (if desired)
                     exp_d_assigned = two_theta_to_d(exp_info['exp_angle'], user_wavelength)
                     st.markdown(
                         f"<div>"
-                        f"<b>Peak {i}:</b> 2θ = {calc_angle:.2f}°  |  d-spacing = {calc_d:.4f} Å "
+                        f"<b>Peak {i}:</b> 2θ = {two_theta_new:.2f}°  |  d-spacing = {calc_d:.4f} Å "
                         f"(<b style='color:blue;'>Exp 2θ = {exp_info['exp_angle']:.2f}° | Exp d-spacing = {exp_d_assigned:.4f} Å</b>), "
                         f"<b>I = {calc_intensity:.2f}</b> "
                         f"(<b style='color:blue;'>Exp I = {exp_info['exp_intensity']:.2f}</b>)"
@@ -1227,10 +1237,9 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                     )
                 else:
                     st.markdown(
-                        f"<div><b>Peak {i}:</b> 2θ = {calc_angle:.2f}°  |  d-spacing = {calc_d:.4f} Å, "
+                        f"<div><b>Peak {i}:</b> 2θ = {two_theta_new:.2f}°  |  d-spacing = {calc_d:.4f} Å, "
                         f"<b>I = {calc_intensity:.2f}</b></div>",
                         unsafe_allow_html=True
-                    )
                 displayed_peak = True
             if not displayed_peak:
                 st.warning("No peaks above the selected detailed intensity threshold were found.")
