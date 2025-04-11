@@ -1239,7 +1239,7 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                     st.markdown(
                         f"<div><b>Peak {i}:</b> 2θ = {two_theta_new:.2f}°  |  d-spacing = {calc_d:.4f} Å, "
                         f"<b>I = {calc_intensity:.2f}</b></div>",
-                        unsafe_allow_html=True
+                        unsafe_allow_html=True)
                 displayed_peak = True
             if not displayed_peak:
                 st.warning("No peaks above the selected detailed intensity threshold were found.")
