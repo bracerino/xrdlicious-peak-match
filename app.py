@@ -17,11 +17,77 @@ from pymatgen.core import Structure
 import aflow
 from scipy.signal import find_peaks
 import time
+import streamlit.components.v1 as components
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+from google.cloud import firestore
+
+
 
 st.set_page_config(
-    page_title="XRDlicious: ",
+    page_title="XRDlicious: Peak Matcher",
     layout="wide"
 )
+
+
+
+
+
+
+
+
+
+
+
+
+# Authenticate to Firestore with the JSON account key.
+
+
+
+
+# Load Firebase credentials from st.secrets (parsed from your TOML file)
+firebase_config = st.secrets["firebase"]
+firebase_config_dict = firebase_config.to_dict()
+#st.write("The type of firebase_config is:", type(firebase_config))
+# Initialize the Firebase Admin app if it hasn't been initialized already
+if not firebase_admin._apps:
+    cred = credentials.Certificate(firebase_config_dict)
+    firebase_admin.initialize_app(cred)
+
+# Now create a Firestore client and list collections
+db = firebase_admin.firestore.client()
+collections = list(db.collections())
+#st.write("Collections:", [col.id for col in collections])
+
+
+#db = firestore.client()
+#print("BBBBBBBBBBBBBBBBBBBBBBBBBBBB\n\n\n")
+#for col in collections:
+#    print("Collection ID:", col.id)
+#    st.write("Collection ID:", col.id)
+#print("CCCCCCCCCCCCCCCCCCCCCCC\n\n\n")
+#print("DB")
+#print(db)
+# Create a reference to the Google post.
+doc_ref = db.collection("data").document("daste")
+
+# Then get the data at that reference.
+doc = doc_ref.get()
+
+# Let's see what we got!
+#st.write("The id is: ", doc.id)
+
+
+
+
+# Initialize Firebase Admin if it hasn’t been initialized already
+if not firebase_admin._apps:
+    cred = credentials.Certificate("firestone-key.json")
+    firebase_admin.initialize_app(cred)
+   # print("INIT ")
+   # print( firebase_admin._apps)
+
 # Remove top padding
 st.markdown("""
     <style>
@@ -31,7 +97,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-import streamlit.components.v1 as components
+
 
 # Inject custom CSS for buttons.
 st.markdown(
@@ -293,17 +359,68 @@ import os
 import json
 from types import SimpleNamespace
 
-
 # Define a filename for the cache (stored in the same directory as your app)
-CACHE_FILENAME = "xrd_cache.json"
-# Load the cache if it exists; otherwise, start with an empty dictionary.
-#if os.path.exists(CACHE_FILENAME):
-#    with open(CACHE_FILENAME, "r") as f:
-#        xrd_db = json.load(f)
-#else:
-#    xrd_db = {}
 
 
+from types import SimpleNamespace
+
+
+
+
+def get_xrd_pattern_cached(structure_id, structure, wavelength=1.7889, twotheta_range=full_range):
+    import numpy as np
+    import json
+    from types import SimpleNamespace
+
+    # Reference the Firestore collection and document by structure_id
+    doc_ref = db.collection("xrd-db").document(structure_id)
+    doc = doc_ref.get()
+
+    if doc.exists:
+        pat_dict = doc.to_dict()
+        # If hkls is present and stored as JSON strings, deserialize them.
+        if "hkls" in pat_dict and pat_dict["hkls"] is not None:
+            pat_dict["hkls"] = [json.loads(item) if isinstance(item, str) else item
+                                for item in pat_dict["hkls"]]
+        pattern = SimpleNamespace(**pat_dict)
+        in_data_or_not = "This structure is already computed in database. Reading data from it."
+        return pattern, in_data_or_not
+
+    else:
+        # Compute the XRD pattern using your existing function.
+        pattern = calculate_xrd_pattern(structure, wavelength=wavelength, range=twotheta_range)
+        in_data_or_not = "NOT in database yet. Calculating its pattern and adding to database."
+
+        # Convert pattern attributes to numpy arrays for filtering.
+        x_array = np.array(pattern.x)
+        y_array = np.array(pattern.y)
+        d_array = np.array(pattern.d_hkls)
+
+        # Filter only those peaks with intensity > 1.
+        valid_indices = np.where(y_array > 1)[0]
+        filtered_x = x_array[valid_indices].tolist()
+        filtered_y = y_array[valid_indices].tolist()
+        filtered_d_hkls = d_array[valid_indices].tolist()
+
+        # Instead of using np.array on pattern.hkls (which may be inhomogeneous), filter it with list comprehension.
+        if hasattr(pattern, 'hkls') and pattern.hkls is not None:
+            filtered_hkls = [pattern.hkls[i] for i in valid_indices]
+            # Serialize each entry as a JSON string to store in Firestore.
+            filtered_hkls_serialized = [json.dumps(item) for item in filtered_hkls]
+        else:
+            filtered_hkls_serialized = None
+
+        # Create the dictionary representing the XRD pattern.
+        pat_dict = {
+            "x": filtered_x,
+            "y": filtered_y,
+            "d_hkls": filtered_d_hkls,
+            "hkls": filtered_hkls_serialized
+        }
+
+        # Store the computed pattern in Firestore.
+        doc_ref.set(pat_dict)
+        return pattern, in_data_or_not
 
 session = requests.Session()
 
@@ -342,21 +459,35 @@ def get_structure_from_aflow(entry):
 
 # --- Streamlit Interface ---
 
-st.markdown("# NOTE:\n"
-            "Searching for structures is fast, but recalculating XRD patterns takes time.\n"
-            "A database for precomputed dhkl values and intensities is under development.\n"
-            "Please wait for it to build, or expect very slower performance. :[")
+st.markdown(
+    "## NOTE:\n"
+    "Recalculating XRD patterns takes time. 🔄"
+    "When you search for a combination that hasn't been queried before, the XRD pattern is computed and **uploaded to the database**. 📥"
+    "This means that although the initial computation may be slow, subsequent searches for the same combination will be much faster."
+    "So by searching for new combinations, you're basically also **extending the database**, making this application run faster. 👍"
+)
 
 # --- Experimental XRD Data Inputs ---
 st.subheader("Experimental XRD Data Inputs")
 
-st.sidebar.header("📤 Upload Experimental XRD Data")
-exp_xrd_file = st.sidebar.file_uploader("Upload your XRD file (2 columns: 2θ and intensity)", type=['txt', 'csv', 'xy'])
+#st.sidebar.header("📤 Upload Experimental XRD Data")
+#exp_xrd_file = st.sidebar.file_uploader("Upload your XRD file (2 columns: 2θ and intensity)", type=['txt', 'csv', 'xy'])
 
-uploaded_x = uploaded_y = None
+
 experimental_peaks = "38, 55, 68, 82, 153, 174"
 experimental_intensities = "92, 40, 35, 55, 58, 64"
 prominence_threshold = st.sidebar.slider("Peak Detection Prominence", min_value=0.1, max_value=20.0, value=2.1, step=0.1)
+col00, col01, col02, col03 = st.columns([2.5, 2, 2, 1])
+with col00:
+    st.markdown(
+        "### Upload Your Experimental Powder XRD Data.)",
+        unsafe_allow_html=True)
+    exp_xrd_file = st.file_uploader("Upload your XRD file (2 columns: 2θ and intensity)",
+                                            type=['txt', 'csv', 'xy'])
+    prominence_threshold = st.slider("Peak Detection Prominence", min_value=0.1, max_value=20.0, value=2.1,
+                                             step=0.1, key='DSD')
+
+uploaded_x = uploaded_y = None
 
 if exp_xrd_file is not None:
     try:
@@ -392,11 +523,7 @@ if exp_xrd_file is not None:
     except Exception as e:
         st.sidebar.error(f"❌ Error reading file: {e}")
 
-col00, col01, col02, col03 = st.columns([2.5, 2, 2, 1])
-with col00:
-    st.markdown(
-        "### 🚧 Upload Your XRD data and Automatically find peak positions (Under reconstruction, will be added in future update 🚧)",
-        unsafe_allow_html=True)
+
 with col01:
     st.markdown("### Peak Positions (2θ)")
     # The 'value' parameter is now set to default_peaks_str.
@@ -705,6 +832,8 @@ elif search_aflow:
             st.error(f"AFLOW error: {e}")
         st.session_state.full_structures_see = combined_structures
 
+#prominence_thresholds = st.slider("Peak Detection Prominence", min_value=0.05, max_value=20.0, value=2,
+#                                         step=0.025, format="%.3f")
 if exp_xrd_file is not None and autodetect:
     import plotly.graph_objects as go
 
@@ -728,6 +857,7 @@ if exp_xrd_file is not None and autodetect:
     )
 
     # Build the figure with both traces.
+
     fig_upload = go.Figure(data=[trace_uploaded, trace_peaks])
     fig_upload.update_layout(
         height=400,
@@ -750,8 +880,8 @@ if exp_xrd_file is not None and autodetect:
 
     st.plotly_chart(fig_upload, use_container_width=True)
 # --- XRD Pattern Calculation and Matching ---
-st.subheader("Comparing Calculated XRD Patterns to Experimental Data")
-compare_intensities = st.checkbox("Compare intensities as well", value=True)
+#compare_intensities = st.checkbox("Compare intensities as well", value=True)
+compare_intensities = True
 
 min_intensity_threshold = st.slider("Minimum calculated peak intensity to consider", min_value=0, max_value=100,
                                     value=5)
@@ -764,17 +894,21 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
 
         # Build candidate list only if it is not already stored.
         if "candidate_list" not in st.session_state:
+            st.markdown(f"## 🔎 Comparing calculated peaks with experimental ones. Please Wait. :]")
             status_placeholder = st.empty()
             status_messages = []
             candidates = []
             idxx = 1
+
             for material_id, structure in st.session_state.full_structures_see.items():
                 print(material_id)
                 try:
+                    start_total = time.perf_counter()
+                    start_cache = time.perf_counter()
                     #pattern = calculate_xrd_pattern(structure, wavelength=user_wavelength, range=full_range)
-                    #pattern = get_xrd_pattern_cached(material_id, structure, wavelength=user_wavelength,
-                     #                                twotheta_range=full_range)
-                    pattern = calculate_xrd_pattern(structure, wavelength=user_wavelength, range=full_range)
+                    pattern, in_data_or = get_xrd_pattern_cached(material_id, structure, wavelength=user_wavelength,
+                                                     twotheta_range=full_range)
+                    end_cache = time.perf_counter()
                    # st.write(
                     #    f"Time for XRD pattern (cache check or computation): {end_cache - start_cache:.4f} seconds")
                     if compare_intensities:
@@ -801,8 +935,8 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                     space_group_number = SpacegroupAnalyzer(structure).get_space_group_number()
                     with st.spinner("Comparing structures..."):
                         current_message = (
-                            f"**Comparing structure: {idxx}/{length}** {material_id} ({comp}) using {method} method. "
-                            f"Resulting match score: {score:.2f}")
+                            f"**{in_data_or}**\n\n**Comparing structure: {idxx}/{length}** {material_id} ({comp}) using {method} method. "
+                            f"Resulting match score: {score:.2f} ⭐")
                         status_messages.append(current_message)
                         status_placeholder.write(status_messages[-1])
 
@@ -833,7 +967,7 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 st.warning("No candidate structures produced a calculable XRD pattern.")
         else:
             candidates_top = st.session_state.candidate_list
-
+        st.markdown(f"### ✅🔎 Search finished! Check the results below. 🎉")
         if candidates_top:
             candidate_display_options = [
                 (
@@ -936,7 +1070,10 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                 except Exception:
                     hkl_text = "N/A"
                 two_theta_val = pattern.x[i]
-                vertical_x_calc.extend([two_theta_val, two_theta_val, None])
+                d_spacing_val = pattern.d_hkls[i]
+                # Recalculate 2θ using the new wavelength (user_wavelength)
+                two_theta_new = 2 * np.degrees(np.arcsin(user_wavelength / (2 * d_spacing_val)))
+                vertical_x_calc.extend([two_theta_new, two_theta_new, None])
                 vertical_y_calc.extend([0, pattern.y[i], None])
                 # vertical_hover_calc.extend([f"<b>hkl: {hkl_text}</b>", f"<b>hkl: {hkl_text}</b>", None])
                 vertical_hover_calc.extend([hover_text, hover_text, None])
