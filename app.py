@@ -555,10 +555,10 @@ with col1:
     mp_search_query = st.text_input("Materials Project: Enter elements separated by spaces (e.g., Sr Ti O):",
                                     value="Sr Ti O", key="mp_search")
 with col2:
-    aflow_elements_input = st.text_input("AFLOW: Enter elements separated by spaces (e.g., Ti):", value="Ti",
+    aflow_elements_input = st.text_input("AFLOW: Enter elements separated by spaces (e.g., Ti Fe):", value="Ti Fe",
                                          key="aflow_search")
 with col3:
-    cod_elements_input = st.text_input("COD: Enter elements separated by spaces (e.g., Ti Fe)", value="Ti Fe", key="cod_search")
+    cod_elements_input = st.text_input("COD: Enter elements separated by spaces (e.g., Ti)", value="Ti", key="cod_search")
 
 
 col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
