@@ -938,7 +938,7 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
                             current_message = (
                                 f"**✅ {in_data_or}**\n\n**Comparing structure: {idxx}/{length}** {material_id} ({comp}) using {method} method. "
                                 f"Resulting match score: {score:.2f} ⭐")
-                        else:
+                       else:
                             current_message = (
                                 f"**🚧 {in_data_or}**\n\n**Comparing structure: {idxx}/{length}** {material_id} ({comp}) using {method} method. "
                                 f"Resulting match score: {score:.2f} ⭐")
