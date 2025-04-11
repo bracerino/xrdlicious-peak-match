@@ -293,64 +293,16 @@ import os
 import json
 from types import SimpleNamespace
 
+
 # Define a filename for the cache (stored in the same directory as your app)
-
 CACHE_FILENAME = "xrd_cache.json"
-
 # Load the cache if it exists; otherwise, start with an empty dictionary.
-if os.path.exists(CACHE_FILENAME):
-    with open(CACHE_FILENAME, "r") as f:
-        xrd_db = json.load(f)
-else:
-    xrd_db = {}
+#if os.path.exists(CACHE_FILENAME):
+#    with open(CACHE_FILENAME, "r") as f:
+#        xrd_db = json.load(f)
+#else:
+#    xrd_db = {}
 
-
-def get_xrd_pattern_cached(structure_id, structure, wavelength=1.7889, twotheta_range=full_range):
-
-    global xrd_db
-    # Check if pattern is in cache
-    if structure_id in xrd_db:
-        pat_dict = xrd_db[structure_id]
-        pattern = SimpleNamespace(**pat_dict)
-        return pattern
-    else:
-        # Compute the XRD pattern using your existing function.
-        pattern = calculate_xrd_pattern(structure, wavelength=wavelength, range=twotheta_range)
-
-        # Convert pattern attributes to numpy arrays for filtering.
-        x_array = np.array(pattern.x)
-        y_array = np.array(pattern.y)
-        d_array = np.array(pattern.d_hkls)
-
-        # Filter indices: keep only those peaks where intensity > 1.
-        valid_indices = np.where(y_array > 1)[0]
-
-        # Filter the arrays using these indices.
-        filtered_x = x_array[valid_indices].tolist()
-        filtered_y = y_array[valid_indices].tolist()
-        filtered_d_hkls = d_array[valid_indices].tolist()
-
-        # Filter hkls if available.
-        if hasattr(pattern, 'hkls'):
-            hkls_array = np.array(pattern.hkls)
-            filtered_hkls = hkls_array[valid_indices].tolist()
-        else:
-            filtered_hkls = pattern.hkls
-
-        # Create dictionary to be cached.
-        pat_dict = {
-            "x": filtered_x,
-            "y": filtered_y,
-            "d_hkls": filtered_d_hkls,
-            "hkls": filtered_hkls
-        }
-
-        # Add the new entry to the cache.
-        xrd_db[structure_id] = pat_dict
-        with open(CACHE_FILENAME, "w") as f:
-            print("ADDED TO THE CACHE")
-            json.dump(xrd_db, f)
-        return pattern
 
 
 session = requests.Session()
@@ -819,12 +771,10 @@ if "full_structures_see" in st.session_state and st.session_state.full_structure
             for material_id, structure in st.session_state.full_structures_see.items():
                 print(material_id)
                 try:
-                    start_total = time.perf_counter()
-                    start_cache = time.perf_counter()
                     #pattern = calculate_xrd_pattern(structure, wavelength=user_wavelength, range=full_range)
-                    pattern = get_xrd_pattern_cached(material_id, structure, wavelength=user_wavelength,
+                    #pattern = get_xrd_pattern_cached(material_id, structure, wavelength=user_wavelength,
                                                      twotheta_range=full_range)
-                    end_cache = time.perf_counter()
+                    pattern = calculate_xrd_pattern(structure, wavelength=user_wavelength, range=full_range)
                    # st.write(
                     #    f"Time for XRD pattern (cache check or computation): {end_cache - start_cache:.4f} seconds")
                     if compare_intensities:
